@@ -1,4 +1,4 @@
-# 隔空刷抖音 - 手势控制助手
+# 隔空刷视频 - 手势控制助手
 
 [![GitHub Stars](https://img.shields.io/github/stars/username/gesture-control-douyin.svg)](https://github.com/username/gesture-control-douyin)
 [![GitHub License](https://img.shields.io/github/license/username/gesture-control-douyin.svg)](https://github.com/username/gesture-control-douyin/blob/main/LICENSE)
@@ -16,23 +16,23 @@
 
 ## 🛠️ 依赖框架
 
-| 依赖项 | 版本 | 用途 |
-|-------|------|------|
+| 依赖项       | 版本      | 用途      |
+| --------- | ------- | ------- |
 | MediaPipe | ^0.10.0 | 手部关键点检测 |
-| PyQt5 | ^5.15.0 | 图形界面 |
-| OpenCV | ^4.0.0 | 视频采集和处理 |
-| NumPy | ^1.20.0 | 数值计算 |
-| PyAutoGUI | ^0.9.50 | 系统操作模拟 |
+| PyQt5     | ^5.15.0 | 图形界面    |
+| OpenCV    | ^4.0.0  | 视频采集和处理 |
+| NumPy     | ^1.20.0 | 数值计算    |
+| PyAutoGUI | ^0.9.50 | 系统操作模拟  |
 
 ## 📱 手势操作说明
 
-| 手势 | 操作 | 说明 |
-|------|------|------|
-| 竖直大拇指 | 双击点赞 | 只有竖直向上竖起大拇指才会触发 |
-| 食指下滑 | 刷下一个视频 | 仅食指伸直，向下滑动 |
-| 食指上滑 | 刷上一个视频 | 仅食指伸直，向上滑动 |
-| 手掌张开 | 暂停/播放 | 所有手指伸直 |
-| 握拳 | 重置状态 | 所有手指弯曲，清空缓存 |
+| 手势    | 操作     | 说明              |
+| ----- | ------ | --------------- |
+| 竖直大拇指 | 双击点赞   | 只有竖直向上竖起大拇指才会触发 |
+| 食指下滑  | 刷下一个视频 | 仅食指伸直，向下滑动      |
+| 食指上滑  | 刷上一个视频 | 仅食指伸直，向上滑动      |
+| 手掌张开  | 暂停/播放  | 所有手指伸直          |
+| 握拳    | 重置状态   | 所有手指弯曲，清空缓存     |
 
 ## 🧠 核心算法逻辑
 
@@ -43,6 +43,7 @@
 **选取基准点**：手腕节点 (0)、中指根部节点 (9)
 
 **计算公式**：
+
 ```python
 ref_length = np.linalg.norm(
     np.array([wrist.x, wrist.y]) - 
@@ -57,6 +58,7 @@ ref_length = np.linalg.norm(
 **触发条件**：仅食指伸直，其余 4 指弯曲
 
 **加权坐标计算**：
+
 ```python
 # 节点顺序：5(根部0.1) → 6(近端0.1) →7(中端0.3)→8(指尖0.6)
 index_5 = landmarks[5]
@@ -69,11 +71,13 @@ weighted_y = 0.1 * index_5.y + 0.1 * index_6.y + 0.3 * index_7.y + 0.6 * index_8
 ```
 
 **位移计算**：
+
 - 缓存连续 10 帧加权 Y 坐标
 - 总位移 = (最后一帧 Y 坐标 - 第一帧 Y 坐标)
 - 归一化总位移 = 总位移 / 手掌基准长度
 
 **动作判定**：
+
 - 归一化位移 > 0.15 → 执行食指下滑
 - 归一化位移 < -0.15 → 执行食指上滑
 - 触发后清空缓存，避免连续触发
@@ -109,6 +113,7 @@ def is_finger_extended(self, landmarks, joint_idxs):
 ```
 
 **判定规则**：
+
 - 夹角 ≥ 160° → 手指伸直
 - 夹角 < 160° → 手指弯曲
 
@@ -119,6 +124,7 @@ def is_finger_extended(self, landmarks, joint_idxs):
 **基础条件**：大拇指伸直，其余四指完全弯曲
 
 **方向判定**：
+
 ```python
 def is_thumbs_up(self, landmarks, ref_length):
     # 1. 拇指关节点
@@ -146,6 +152,7 @@ def is_thumbs_up(self, landmarks, ref_length):
 ```
 
 **严格阈值**：
+
 - 垂直分量 > 0.15 且 水平分量 < 0.12
 - 满足所有条件 → 判定为大拇指点赞
 
@@ -160,6 +167,7 @@ def is_thumbs_up(self, landmarks, ref_length):
 **触发条件**：所有手指 全部弯曲
 
 **执行操作**：
+
 - 清空食指滑动缓存
 - 重置手势状态
 - 无系统操作
@@ -169,6 +177,7 @@ def is_thumbs_up(self, landmarks, ref_length):
 **作用**：消除摄像头抖动、检测误差，保证手势操作稳定
 
 **防抖逻辑（多数投票）**：
+
 ```python
 # 防抖处理：多数投票
 self.gesture_history.append(raw_gesture)
@@ -180,6 +189,7 @@ else:
 ```
 
 **边缘触发逻辑**：
+
 ```python
 # 边缘触发：仅手势变化时执行一次
 if valid_gesture != self.last_valid_gesture and valid_gesture != "" and valid_gesture != "握拳":
@@ -206,7 +216,7 @@ python gesture_control.py
 
 1. 运行程序后，点击"开始运行"按钮
 2. 将手放在摄像头前，确保手部清晰可见
-3. 使用以下手势控制抖音：
+3. 使用以下手势控制视频：
    - 竖起大拇指：双击点赞
    - 仅伸直食指并上下移动：上下滑动视频
    - 张开手掌：暂停/播放视频
@@ -243,6 +253,6 @@ python gesture_control.py
 - [PyQt5](https://www.riverbankcomputing.com/software/pyqt/) - 提供图形界面
 - [PyAutoGUI](https://pyautogui.readthedocs.io/) - 提供系统操作模拟
 
----
+***
 
 **享受隔空刷抖音的乐趣！** 🎵✨
