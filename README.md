@@ -1,7 +1,9 @@
-# 隔空刷视频 - 手势控制助手
+# 隔空刷视频 - GestureScroll
 
 [![GitHub Stars](https://img.shields.io/github/stars/username/gesture-control-douyin.svg)](https://github.com/username/gesture-control-douyin)
 [![GitHub License](https://img.shields.io/github/license/username/gesture-control-douyin.svg)](https://github.com/username/gesture-control-douyin/blob/main/LICENSE)
+
+你是否还在为刷视频还需要拿起手机或者电脑，下滑屏幕或者敲击键盘的↓键而烦恼，使用这个基于MediaPipe的简单小项目即可实现隔空刷视频，甚至可以躺在床上，仅仅移动手指。当然如果这样还是太累，用面部表情控制来实现同样可以，本项目使用trae辅助开发，正在开发其他端/Android/iOS
 
 一个基于 MediaPipe 和 PyQt5 的手势控制工具，让你无需触摸屏幕，通过手势即可控制抖音视频的播放、暂停、上下滑动和点赞操作。
 
