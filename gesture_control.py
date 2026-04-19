@@ -35,9 +35,12 @@ class VideoThread(QThread):
         self.mp_drawing = mp.solutions.drawing_utils
         
         # 防抖与状态跟踪
-        self.gesture_history = deque(maxlen=5)  # 最近5帧手势，用于多数投票防抖
+        self.gesture_history = deque(maxlen=10)  # 扩大历史窗口，增强防抖
         self.last_valid_gesture = ""  # 上一次有效手势，用于边缘触发
-        self.index_tip_history = deque(maxlen=10)  # 食指位置历史，用于滑动检测
+        
+        # 空帧防抖：防止偶尔的检测波动导致状态重置
+        self.empty_frame_count = 0
+        self.EMPTY_THRESHOLD = 3  # 连续3帧空手势，才会真正重置状态
     
     def calculate_finger_angle(self, landmarks, joint_idxs):
         """
@@ -147,83 +150,68 @@ class VideoThread(QThread):
         raw_gesture = ""
         
         # 3. 手势分类
-        # 握拳：所有手指弯曲，重置状态
+        # 握拳：所有手指弯曲，内部重置状态，但对外不显示该手势（检测不到）
         if not thumb_extended and not index_extended and not middle_extended and not ring_extended and not pinky_extended:
-            raw_gesture = "握拳"
-            self.index_tip_history.clear()
-            self.last_valid_gesture = ""
+            raw_gesture = ""
         
         # 【优化】标准竖直大拇指点赞（只有这个姿势才点赞）
         elif self.is_thumbs_up(landmarks, ref_length):
             raw_gesture = "大拇指"
         
-        # 食指伸直：仅食指伸直，检测滑动动作
+        # 仅食指伸直：1根手指，触发下一个视频
         elif index_extended and not thumb_extended and not middle_extended and not ring_extended and not pinky_extended:
-            raw_gesture = "食指伸直"
-            
-            # ====================== 仅这里修改 ======================
-            # 加入5号节点（食指根部），权重0.1，不排除
-            # 节点顺序：5(根部0.1) → 6(近端0.1) →7(中端0.3)→8(指尖0.6)
-            index_5 = landmarks[5]
-            index_6 = landmarks[6]
-            index_7 = landmarks[7]
-            index_8 = landmarks[8]
-
-            # 加权计算：5号0.1，6号0.1，7号0.3，8号0.6
-            weighted_y = 0.1 * index_5.y + 0.1 * index_6.y + 0.3 * index_7.y + 0.6 * index_8.y
-            # ========================================================
-            
-            self.index_tip_history.append(weighted_y)
-            
-            # 当收集足够帧后，检测滑动
-            if len(self.index_tip_history) >= 10:
-                start_y = self.index_tip_history[0]
-                end_y = self.index_tip_history[-1]
-                dy = (end_y - start_y) / ref_length
-                
-                if dy > 0.15:
-                    self.gesture_signal.emit("食指下滑")
-                    self.perform_action("食指下滑")
-                    self.index_tip_history.clear()
-                    return
-                elif dy < -0.15:
-                    self.gesture_signal.emit("食指上滑")
-                    self.perform_action("食指上滑")
-                    self.index_tip_history.clear()
-                    return
+            raw_gesture = "一根手指"
         
-        # 手掌张开：所有手指伸直（暂停）
+        # 食指+中指伸直：2根手指，触发上一个视频
+        elif index_extended and middle_extended and not thumb_extended and not ring_extended and not pinky_extended:
+            raw_gesture = "两根手指"
+        
+        # 手掌张开：所有手指伸直（暂停/播放）
         elif thumb_extended and index_extended and middle_extended and ring_extended and pinky_extended:
             raw_gesture = "手掌张开"
         
-        # 其他手势：清空状态
+        # 其他未定义手势：对外显示无检测到
         else:
-            self.index_tip_history.clear()
+            raw_gesture = ""
         
-        # 4. 防抖处理：多数投票
+        # 4. 防抖处理：多数投票，扩大历史窗口过滤波动
         self.gesture_history.append(raw_gesture)
-        if len(self.gesture_history) >= 3:
+        if len(self.gesture_history) >= 5:
             counter = Counter(self.gesture_history)
             valid_gesture = counter.most_common(1)[0][0]
         else:
             valid_gesture = raw_gesture
         
-        # 5. 边缘触发：仅手势变化时执行一次
-        if valid_gesture != self.last_valid_gesture and valid_gesture != "" and valid_gesture != "握拳":
-            self.gesture_signal.emit(valid_gesture)
-            self.perform_action(valid_gesture)
-            self.last_valid_gesture = valid_gesture
+        # 5. 边缘触发处理，增加空帧防抖
+        if valid_gesture != "":
+            # 有效手势：清空空帧计数
+            self.empty_frame_count = 0
+            
+            # 仅当手势真正变化时，才执行一次动作
+            if valid_gesture != self.last_valid_gesture:
+                self.gesture_signal.emit(valid_gesture)
+                self.perform_action(valid_gesture)
+                self.last_valid_gesture = valid_gesture
+        else:
+            # 空手势：计数，过滤偶尔的检测波动
+            self.empty_frame_count += 1
+            
+            # 只有连续多帧空，才真正重置状态
+            if self.empty_frame_count >= self.EMPTY_THRESHOLD:
+                if self.last_valid_gesture != "":
+                    self.gesture_signal.emit("")
+                    self.last_valid_gesture = ""
     
     def perform_action(self, gesture):
         """执行对应手势的系统操作"""
-        if gesture == "食指下滑":
-            pyautogui.scroll(-100)
-        elif gesture == "食指上滑":
-            pyautogui.scroll(100)
+        if gesture == "一根手指":
+            pyautogui.scroll(-100)  # 下一个视频
+        elif gesture == "两根手指":
+            pyautogui.scroll(100)    # 上一个视频
         elif gesture == "大拇指":
             pyautogui.doubleClick()  # 点赞
         elif gesture == "手掌张开":
-            pyautogui.press('space')
+            pyautogui.press('space') # 暂停/播放
     
     def stop(self):
         self.running = False
@@ -232,7 +220,7 @@ class VideoThread(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("手势刷抖音")
+        self.setWindowTitle("手势刷视频by1c")
         self.setGeometry(100, 100, 1000, 600)
         
         # 主布局
@@ -254,10 +242,9 @@ class MainWindow(QMainWindow):
         # 最新手势说明
         gestures = [
             ("大拇指", "竖起点赞"),
-            ("食指下滑", "下一个视频"),
-            ("食指上滑", "上一个视频"),
-            ("手掌张开", "暂停/播放"),
-            ("握拳", "无操作/重置")
+            ("一根手指", "下一个视频"),
+            ("两根手指", "上一个视频"),
+            ("手掌张开", "暂停/播放")
         ]
         
         self.gesture_labels = []
@@ -327,7 +314,13 @@ class MainWindow(QMainWindow):
         self.video_label.setPixmap(QPixmap.fromImage(scaled_image))
     
     def update_gesture(self, gesture):
-        self.current_gesture_label.setText(f"当前手势：{gesture}")
+        # 处理空手势，显示为无
+        if gesture == "":
+            self.current_gesture_label.setText("当前手势：无")
+        else:
+            self.current_gesture_label.setText(f"当前手势：{gesture}")
+        
+        # 更新操作说明的高亮状态
         for gesture_name, label in self.gesture_labels:
             if gesture_name == gesture:
                 label.setStyleSheet("font-size: 14px; color: #4CAF50; font-weight: bold;")
