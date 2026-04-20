@@ -33,8 +33,8 @@ github.com/onehouzii/-GestureScroll
 | 手势    | 操作     | 说明              |
 | ----- | ------ | --------------- |
 | 竖直大拇指 | 双击点赞   | 只有竖直向上竖起大拇指才会触发 |
-| 食指下滑  | 刷下一个视频 | 仅食指伸直，向下滑动      |
-| 食指上滑  | 刷上一个视频 | 仅食指伸直，向上滑动      |
+| 一根手指伸直 | 刷下一个视频 | 仅食指伸直，向下滑动      |
+| 两根手指伸直 | 刷上一个视频 | 食指和中指同时伸直，向上滑动  |
 | 手掌张开  | 暂停/播放  | 所有手指伸直          |
 | 握拳    | 重置状态   | 所有手指弯曲，清空缓存     |
 
@@ -57,69 +57,51 @@ ref_length = np.linalg.norm(
 
 **应用场景**：所有食指滑动位移计算
 
-### 2. 食指加权位移上下滑控制算法
+### 2. 手指伸直状态判断算法
 
-**触发条件**：仅食指伸直，其余 4 指弯曲
+**触发条件**：根据不同手势组合判断
 
-**加权坐标计算**：
+**关节索引定义**：
 
 ```python
-# 节点顺序：5(根部0.1) → 6(近端0.1) →7(中端0.3)→8(指尖0.6)
-index_5 = landmarks[5]
-index_6 = landmarks[6]
-index_7 = landmarks[7]
-index_8 = landmarks[8]
-
-# 加权计算：5号0.1，6号0.1，7号0.3，8号0.6
-weighted_y = 0.1 * index_5.y + 0.1 * index_6.y + 0.3 * index_7.y + 0.6 * index_8.y
+FINGER_JOINTS = {
+    'thumb': [2, 3, 4],    # 拇指：IP, DIP, TIP
+    'index': [6, 7, 8],    # 食指：PIP, DIP, TIP
+    'middle': [10, 11, 12],# 中指：PIP, DIP, TIP
+    'ring': [14, 15, 16],  # 无名指：PIP, DIP, TIP
+    'pinky': [18, 19, 20]  # 小指：PIP, DIP, TIP
+}
 ```
 
-**位移计算**：
-
-- 缓存连续 10 帧加权 Y 坐标
-- 总位移 = (最后一帧 Y 坐标 - 第一帧 Y 坐标)
-- 归一化总位移 = 总位移 / 手掌基准长度
-
-**动作判定**：
-
-- 归一化位移 > 0.15 → 执行食指下滑
-- 归一化位移 < -0.15 → 执行食指上滑
-- 触发后清空缓存，避免连续触发
-
-### 3. 手指伸直/弯曲状态判断算法
-
-**作用**：统一判定所有手指的伸直/弯曲状态，为手势识别提供基础
-
-**计算逻辑**：余弦定理计算关节夹角
+**角度计算（余弦定理）**：
 
 ```python
 def calculate_finger_angle(self, landmarks, joint_idxs):
-    # 获取三个关节点的坐标
     p1 = np.array([landmarks[joint_idxs[0]].x, landmarks[joint_idxs[0]].y])
     p2 = np.array([landmarks[joint_idxs[1]].x, landmarks[joint_idxs[1]].y])
     p3 = np.array([landmarks[joint_idxs[2]].x, landmarks[joint_idxs[2]].y])
-    
-    # 计算向量
+
     v1 = p1 - p2
     v2 = p3 - p2
-    
-    # 计算夹角（余弦定理）
+
     cos_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
-    cos_angle = np.clip(cos_angle, -1.0, 1.0)  # 防止数值误差导致超出范围
+    cos_angle = np.clip(cos_angle, -1.0, 1.0)
     angle = np.arccos(cos_angle) * 180 / np.pi
-    
+
     return angle
 
 def is_finger_extended(self, landmarks, joint_idxs):
-    """判断手指是否伸直，使用角度判断，不受方向影响"""
     angle = self.calculate_finger_angle(landmarks, joint_idxs)
-    return angle > 160
+    return angle > 160  # 夹角 > 160° 判定为伸直
 ```
 
-**判定规则**：
+**手势判定规则**：
 
-- 夹角 ≥ 160° → 手指伸直
-- 夹角 < 160° → 手指弯曲
+- 握拳：所有手指弯曲 → 无操作
+- 大拇指点赞：拇指伸直向上 + 其余四指弯曲 → 双击
+- 一根手指：仅食指伸直 → 下一个视频
+- 两根手指：食指+中指伸直 → 上一个视频
+- 手掌张开：所有手指伸直 → 暂停/播放
 
 ### 4. 大拇指点赞手势识别算法
 
@@ -206,6 +188,14 @@ if valid_gesture != self.last_valid_gesture and valid_gesture != "" and valid_ge
 
 ### 安装依赖
 
+**方式一：使用 requirements.txt（推荐）**
+
+```bash
+pip install -r requirements.txt
+```
+
+**方式二：手动安装**
+
 ```bash
 pip install mediapipe opencv-python pyqt5 numpy pyautogui
 ```
@@ -238,9 +228,10 @@ python gesture_control.py
 
 ```
 ├── gesture_control.py  # 主程序文件
+├── requirements.txt   # Python依赖列表
 ├── README.md          # 项目说明文档
-├── 技术方案.md         # 技术方案文档
-└── 算法实现原理.md       # 算法实现原理文档
+├── LICENSE            # MIT许可证
+└── .gitignore         # Git忽略文件
 ```
 
 ## 🤝 贡献
